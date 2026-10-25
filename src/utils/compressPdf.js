@@ -15,13 +15,41 @@ function canvasToJpeg(canvas, quality) {
         if (blob) {
           resolve(blob)
         } else {
-          reject(new Error('Could not compress a PDF page.'))
+          reject(new Error('Could not convert a PDF page to an image.'))
         }
       },
       'image/jpeg',
       quality,
     )
   })
+}
+
+function getSafeSettings(requestedQuality, requestedScale, pageCount) {
+  const isMobile =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(max-width: 768px)').matches
+
+  let quality = requestedQuality
+  let scale = requestedScale
+
+  // Reduce rendering workload on mobile devices.
+  if (isMobile) {
+    scale = Math.min(scale, 1)
+    quality = Math.min(quality, 0.6)
+  }
+
+  // Reduce memory usage for longer documents.
+  if (pageCount > 30) {
+    scale = Math.min(scale, 0.8)
+    quality = Math.min(quality, 0.5)
+  }
+
+  if (pageCount > 60) {
+    scale = Math.min(scale, 0.65)
+    quality = Math.min(quality, 0.4)
+  }
+
+  return { quality, scale }
 }
 
 export async function compressPdf(
@@ -37,7 +65,7 @@ export async function compressPdf(
     file.name.toLowerCase().endsWith('.pdf')
 
   if (!isPdf) {
-    throw new Error('Only PDF files are supported.')
+    throw new Error('Please select a PDF file.')
   }
 
   if (file.size === 0) {
@@ -56,7 +84,7 @@ export async function compressPdf(
     throw new Error('Rendering scale must be between 0.5 and 2.')
   }
 
-  let loadingTask = null
+  let loadingTask
 
   try {
     const buffer = await file.arrayBuffer()
@@ -69,9 +97,15 @@ export async function compressPdf(
 
     if (pdf.numPages > MAX_PAGES) {
       throw new Error(
-        `This version supports up to ${MAX_PAGES} pages per PDF.`,
+        `This PDF contains ${pdf.numPages} pages. The current version supports up to ${MAX_PAGES} pages. Please split the PDF into smaller files.`,
       )
     }
+
+    const settings = getSafeSettings(
+      quality,
+      scale,
+      pdf.numPages,
+    )
 
     const outputPdf = await PDFDocument.create()
 
@@ -88,7 +122,9 @@ export async function compressPdf(
       const page = await pdf.getPage(pageNumber)
 
       const originalViewport = page.getViewport({ scale: 1 })
-      const renderViewport = page.getViewport({ scale })
+      const renderViewport = page.getViewport({
+        scale: settings.scale,
+      })
 
       const canvas = document.createElement('canvas')
       const context = canvas.getContext('2d', {
@@ -96,7 +132,9 @@ export async function compressPdf(
       })
 
       if (!context) {
-        throw new Error('Your browser could not create a canvas.')
+        throw new Error(
+          'Your browser could not create the canvas needed to process this PDF.',
+        )
       }
 
       canvas.width = Math.ceil(renderViewport.width)
@@ -110,7 +148,11 @@ export async function compressPdf(
           background: 'rgb(255, 255, 255)',
         }).promise
 
-        const jpegBlob = await canvasToJpeg(canvas, quality)
+        const jpegBlob = await canvasToJpeg(
+          canvas,
+          settings.quality,
+        )
+
         const jpegBytes = await jpegBlob.arrayBuffer()
         const embeddedImage = await outputPdf.embedJpg(jpegBytes)
 
@@ -132,6 +174,11 @@ export async function compressPdf(
       }
     }
 
+    onProgress?.({
+      current: pdf.numPages,
+      total: pdf.numPages,
+    })
+
     const outputBytes = await outputPdf.save({
       useObjectStreams: true,
     })
@@ -151,26 +198,35 @@ export async function compressPdf(
         file.name.replace(/\.pdf$/i, '') + '-compressed.pdf',
     }
   } catch (error) {
+    console.error('PDF compression error:', error)
+
     if (
       error?.name === 'PasswordException' ||
       error?.name === 'EncryptedPDFException'
     ) {
       throw new Error(
-        'This PDF is password-protected. Please use an unlocked PDF.',
+        'This PDF is password-protected. Please unlock it before compressing.',
       )
     }
 
     if (
       error?.message?.includes('supports up to') ||
-      error?.message?.includes('must be between')
+      error?.message?.includes('contains')
     ) {
       throw error
     }
 
-    console.error('PDF compression failed:', error)
+    if (
+      error?.name === 'AbortException' ||
+      /memory|allocation|out of memory/i.test(error?.message || '')
+    ) {
+      throw new Error(
+        'Your device ran out of memory while processing this PDF. Try a smaller PDF or split it into smaller files.',
+      )
+    }
 
     throw new Error(
-      'Could not process this PDF. It may be damaged, encrypted, or too complex for your browser.',
+      'PDF processing failed. Please try a smaller PDF or another file. If the problem continues, check the browser console for the original error.',
     )
   } finally {
     if (loadingTask) {
