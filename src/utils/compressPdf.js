@@ -6,7 +6,6 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024
-const MAX_PAGES = 100
 
 function canvasToJpeg(canvas, quality) {
   return new Promise((resolve, reject) => {
@@ -24,32 +23,64 @@ function canvasToJpeg(canvas, quality) {
   })
 }
 
-function getSafeSettings(requestedQuality, requestedScale, pageCount) {
+function getDeviceSettings(pageCount, quality, scale) {
   const isMobile =
     typeof window !== 'undefined' &&
     window.matchMedia('(max-width: 768px)').matches
 
-  let quality = requestedQuality
-  let scale = requestedScale
+  let finalQuality = quality
+  let finalScale = scale
 
-  // Reduce rendering workload on mobile devices.
+  // Mobile browsers usually have less available memory.
   if (isMobile) {
-    scale = Math.min(scale, 1)
-    quality = Math.min(quality, 0.6)
+    finalScale = Math.min(finalScale, 0.85)
+    finalQuality = Math.min(finalQuality, 0.55)
   }
 
-  // Reduce memory usage for longer documents.
-  if (pageCount > 30) {
-    scale = Math.min(scale, 0.8)
-    quality = Math.min(quality, 0.5)
+  // Adapt quality and resolution to long documents.
+  if (pageCount > 50) {
+    finalScale = Math.min(finalScale, 0.8)
+    finalQuality = Math.min(finalQuality, 0.5)
   }
 
-  if (pageCount > 60) {
-    scale = Math.min(scale, 0.65)
-    quality = Math.min(quality, 0.4)
+  if (pageCount > 100) {
+    finalScale = Math.min(finalScale, 0.65)
+    finalQuality = Math.min(finalQuality, 0.45)
   }
 
-  return { quality, scale }
+  if (pageCount > 200) {
+    finalScale = Math.min(finalScale, 0.5)
+    finalQuality = Math.min(finalQuality, 0.4)
+  }
+
+  return {
+    quality: finalQuality,
+    scale: finalScale,
+    maxPixels: isMobile ? 4_000_000 : 8_000_000,
+    maxDimension: isMobile ? 2560 : 3500,
+  }
+}
+
+function getSafeRenderScale(viewport, settings) {
+  const width = viewport.width
+  const height = viewport.height
+
+  if (!width || !height) {
+    throw new Error('This PDF contains a page with invalid dimensions.')
+  }
+
+  const dimensionScale =
+    settings.maxDimension / Math.max(width, height)
+
+  const pixelScale = Math.sqrt(
+    settings.maxPixels / (width * height),
+  )
+
+  return Math.min(
+    settings.scale,
+    dimensionScale,
+    pixelScale,
+  )
 }
 
 export async function compressPdf(
@@ -69,18 +100,18 @@ export async function compressPdf(
   }
 
   if (file.size === 0) {
-    throw new Error('The selected file is empty.')
+    throw new Error('The selected PDF is empty.')
   }
 
   if (file.size > MAX_FILE_SIZE) {
     throw new Error('The maximum supported file size is 100 MB.')
   }
 
-  if (quality < 0.1 || quality > 1) {
+  if (!Number.isFinite(quality) || quality < 0.1 || quality > 1) {
     throw new Error('Image quality must be between 0.1 and 1.')
   }
 
-  if (scale < 0.5 || scale > 2) {
+  if (!Number.isFinite(scale) || scale < 0.5 || scale > 2) {
     throw new Error('Rendering scale must be between 0.5 and 2.')
   }
 
@@ -94,36 +125,36 @@ export async function compressPdf(
     })
 
     const pdf = await loadingTask.promise
+    const pageCount = pdf.numPages
 
-    if (pdf.numPages > MAX_PAGES) {
-      throw new Error(
-        `This PDF contains ${pdf.numPages} pages. The current version supports up to ${MAX_PAGES} pages. Please split the PDF into smaller files.`,
-      )
+    if (!pageCount) {
+      throw new Error('This PDF does not contain any pages.')
     }
 
-    const settings = getSafeSettings(
+    const settings = getDeviceSettings(
+      pageCount,
       quality,
       scale,
-      pdf.numPages,
     )
 
     const outputPdf = await PDFDocument.create()
 
-    for (
-      let pageNumber = 1;
-      pageNumber <= pdf.numPages;
-      pageNumber++
-    ) {
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
       onProgress?.({
         current: pageNumber,
-        total: pdf.numPages,
+        total: pageCount,
       })
 
       const page = await pdf.getPage(pageNumber)
-
       const originalViewport = page.getViewport({ scale: 1 })
+
+      const renderScale = getSafeRenderScale(
+        originalViewport,
+        settings,
+      )
+
       const renderViewport = page.getViewport({
-        scale: settings.scale,
+        scale: renderScale,
       })
 
       const canvas = document.createElement('canvas')
@@ -133,7 +164,7 @@ export async function compressPdf(
 
       if (!context) {
         throw new Error(
-          'Your browser could not create the canvas needed to process this PDF.',
+          'Your browser could not create a canvas. Try another browser.',
         )
       }
 
@@ -168,6 +199,8 @@ export async function compressPdf(
           height: originalViewport.height,
         })
       } finally {
+        // Release each page's canvas memory before processing
+        // the next page.
         canvas.width = 0
         canvas.height = 0
         page.cleanup()
@@ -175,8 +208,8 @@ export async function compressPdf(
     }
 
     onProgress?.({
-      current: pdf.numPages,
-      total: pdf.numPages,
+      current: pageCount,
+      total: pageCount,
     })
 
     const outputBytes = await outputPdf.save({
@@ -187,46 +220,52 @@ export async function compressPdf(
       type: 'application/pdf',
     })
 
+    const savedBytes = file.size - blob.size
+
     return {
       blob,
       originalSize: file.size,
       compressedSize: blob.size,
-      savedBytes: file.size - blob.size,
-      savedPercentage:
-        ((file.size - blob.size) / file.size) * 100,
+      savedBytes,
+      savedPercentage: (savedBytes / file.size) * 100,
+      isSmaller: blob.size < file.size,
       fileName:
         file.name.replace(/\.pdf$/i, '') + '-compressed.pdf',
     }
   } catch (error) {
-    console.error('PDF compression error:', error)
+    console.error('PDF compression failed:', error)
 
     if (
       error?.name === 'PasswordException' ||
       error?.name === 'EncryptedPDFException'
     ) {
       throw new Error(
-        'This PDF is password-protected. Please unlock it before compressing.',
+        'This PDF is password-protected. Please unlock it first.',
       )
     }
 
     if (
-      error?.message?.includes('supports up to') ||
-      error?.message?.includes('contains')
+      error?.message?.includes('between 0.1 and 1') ||
+      error?.message?.includes('between 0.5 and 2') ||
+      error?.message?.includes('100 MB') ||
+      error?.message?.includes('does not contain') ||
+      error?.message?.includes('invalid dimensions')
     ) {
       throw error
     }
 
     if (
-      error?.name === 'AbortException' ||
-      /memory|allocation|out of memory/i.test(error?.message || '')
+      /memory|allocation|out of memory/i.test(
+        error?.message || '',
+      )
     ) {
       throw new Error(
-        'Your device ran out of memory while processing this PDF. Try a smaller PDF or split it into smaller files.',
+        'Your device ran out of memory. Close other tabs and try again, or use a smaller PDF.',
       )
     }
 
     throw new Error(
-      'PDF processing failed. Please try a smaller PDF or another file. If the problem continues, check the browser console for the original error.',
+      'PDF processing failed. Please try again with another PDF. If the problem continues, the file may be unsupported or too complex for this browser.',
     )
   } finally {
     if (loadingTask) {

@@ -1,5 +1,5 @@
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDownToLine,
   CheckCircle2,
@@ -7,9 +7,9 @@ import {
   Gauge,
   LockKeyhole,
   RefreshCw,
+  ShieldCheck,
   Sparkles,
-  Upload,
-  RotateCcw,
+  XCircle,
 } from 'lucide-react'
 
 import Header from './components/Header.jsx'
@@ -21,18 +21,9 @@ import { trackEvent } from './utils/analytics.js'
 const MAX_FILE_SIZE = 100 * 1024 * 1024
 
 const COMPRESSION_SETTINGS = {
-  smaller: {
-    quality: 0.4,
-    scale: 0.9,
-  },
-  balanced: {
-    quality: 0.6,
-    scale: 1.25,
-  },
-  clearer: {
-    quality: 0.82,
-    scale: 1.6,
-  },
+  smaller: { quality: 0.4, scale: 0.9 },
+  balanced: { quality: 0.6, scale: 1.25 },
+  clearer: { quality: 0.82, scale: 1.6 },
 }
 
 function formatKB(bytes) {
@@ -51,50 +42,86 @@ function formatFileSize(bytes) {
   return formatMB(bytes)
 }
 
+function getResultCategory(result) {
+  if (result.compressedSize >= result.originalSize) {
+    return 'not_smaller'
+  }
+
+  if (result.savedPercentage >= 50) {
+    return 'excellent'
+  }
+
+  if (result.savedPercentage >= 15) {
+    return 'good'
+  }
+
+  return 'small'
+}
+
 export default function App() {
-  const [file, setFile] = useState(null)
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [qualityMode, setQualityMode] = useState('balanced')
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [progress, setProgress] = useState(null)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [qualityMode, setQualityMode] = useState('balanced')
-  const [progress, setProgress] = useState(null)
+  const [dragHint, setDragHint] = useState(false)
 
-  function handleFileSelected(selectedFile) {
-    setError('')
+  const downloadUrlRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (downloadUrlRef.current) {
+        URL.revokeObjectURL(downloadUrlRef.current)
+      }
+    }
+  }, [])
+
+  function clearPreviousResult() {
+    if (downloadUrlRef.current) {
+      URL.revokeObjectURL(downloadUrlRef.current)
+      downloadUrlRef.current = null
+    }
+
     setResult(null)
     setProgress(null)
+    setError('')
+  }
+
+  function handleFileSelected(file) {
+    clearPreviousResult()
+
+    if (!file) return
 
     const isPdf =
-      selectedFile.type === 'application/pdf' ||
-      selectedFile.name.toLowerCase().endsWith('.pdf')
+      file.type === 'application/pdf' ||
+      file.name.toLowerCase().endsWith('.pdf')
 
     if (!isPdf) {
-      setFile(null)
-      setError('Please select a PDF file.')
+      setSelectedFile(null)
+      setError('Please choose a PDF file.')
       return
     }
 
-    if (selectedFile.size === 0) {
-      setFile(null)
-      setError('The selected file is empty.')
+    if (file.size === 0) {
+      setSelectedFile(null)
+      setError('This file is empty. Please choose another PDF.')
       return
     }
 
-    if (selectedFile.size > MAX_FILE_SIZE) {
-      setFile(null)
+    if (file.size > MAX_FILE_SIZE) {
+      setSelectedFile(null)
       setError('The maximum supported file size is 100 MB.')
       return
     }
 
-    setFile(selectedFile)
+    setSelectedFile(file)
   }
 
-  async function handleOptimize() {
-    if (!file || isProcessing) return
+  async function handleCompress() {
+    if (!selectedFile || isProcessing) return
 
-    setError('')
-    setResult(null)
-    setProgress(null)
+    clearPreviousResult()
     setIsProcessing(true)
 
     trackEvent('tool_started', {
@@ -104,29 +131,34 @@ export default function App() {
     try {
       const settings = COMPRESSION_SETTINGS[qualityMode]
 
-      const optimized = await compressPdf(file, {
+      const compressionResult = await compressPdf(selectedFile, {
         ...settings,
-        onProgress: setProgress,
+        onProgress: (pageProgress) => {
+          setProgress(pageProgress)
+        },
       })
 
-      setResult(optimized)
+      const url = URL.createObjectURL(compressionResult.blob)
+      downloadUrlRef.current = url
 
-      const resultCategory =
-        optimized.compressedSize < optimized.originalSize
-          ? 'smaller'
-          : optimized.compressedSize === optimized.originalSize
-            ? 'same_size'
-            : 'larger'
+      setResult({
+        ...compressionResult,
+        url,
+      })
 
       trackEvent('optimization_completed', {
-        result_category: resultCategory,
+        result_category: getResultCategory(compressionResult),
         compression_mode: qualityMode,
       })
     } catch (err) {
-      setError(
-        err?.message ||
-          'Unable to process this PDF. Please try another file.',
-      )
+      console.error('Compression failed:', err)
+
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'An unexpected error occurred while processing the PDF.'
+
+      setError(message)
 
       trackEvent('optimization_error', {
         error_type: 'processing_failed',
@@ -138,484 +170,460 @@ export default function App() {
   }
 
   function handleDownload() {
-    if (!result) return
+    if (!result?.url) return
 
-    const url = URL.createObjectURL(result.blob)
     const link = document.createElement('a')
-
-    link.href = url
+    link.href = result.url
     link.download = result.fileName
 
     document.body.appendChild(link)
     link.click()
     link.remove()
 
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-
     trackEvent('download_completed', {
-      result_category:
-        result.compressedSize < result.originalSize
-          ? 'smaller'
-          : result.compressedSize === result.originalSize
-            ? 'same_size'
-            : 'larger',
+      result_category: getResultCategory(result),
     })
   }
 
   function handleReset() {
-    setFile(null)
-    setResult(null)
-    setError('')
+    clearPreviousResult()
+    setSelectedFile(null)
     setIsProcessing(false)
-    setProgress(null)
-    setQualityMode('balanced')
+    setDragHint(false)
   }
 
   const savedBytes = result
     ? result.originalSize - result.compressedSize
     : 0
 
-  const savedPercentage = result
-    ? ((result.originalSize - result.compressedSize) /
-        result.originalSize) *
-      100
-    : 0
+  const isSmaller = result
+    ? result.compressedSize < result.originalSize
+    : false
+
+  const progressPercentage =
+    progress && progress.total > 0
+      ? Math.round((progress.current / progress.total) * 100)
+      : 0
 
   return (
-    <div className="min-h-screen bg-[#faf9ff] text-slate-800">
+    <div className="min-h-screen bg-slate-50 text-slate-800">
       <Header />
 
-      <main>
-        {/* Hero and PDF compressor */}
-        <section className="px-5 pb-16 pt-14 sm:pb-24 sm:pt-20">
-          <div className="mx-auto max-w-4xl">
-            <div className="mb-5 flex justify-center">
-              <span className="inline-flex items-center gap-2 rounded-full border border-violet-100 bg-white px-4 py-2 text-sm font-medium text-violet-700 shadow-sm">
-                <Sparkles size={16} />
-                Smart PDF compression
-              </span>
-            </div>
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
+        <section className="mx-auto max-w-3xl text-center">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-violet-100 bg-white px-4 py-2 text-sm font-medium text-violet-700 shadow-sm">
+            <Sparkles size={16} />
+            Free online PDF compressor
+          </div>
 
-            <h1 className="mx-auto max-w-3xl text-center text-4xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-6xl">
-              Compress PDF files
-              <span className="block text-violet-600">
-                to a smaller size
-              </span>
-            </h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
+            Compress PDF files
+            <span className="block text-violet-600">
+              quickly and privately
+            </span>
+          </h1>
 
-            <p className="mx-auto mt-5 max-w-2xl text-center text-base leading-7 text-slate-600 sm:text-lg">
-              Reduce the size of image-heavy PDFs in your browser.
-              Choose your compression level, compare the results,
-              and download the optimized document.
-            </p>
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
+            Reduce PDF file size directly in your browser. Optimize
+            storybooks, ebooks, scanned documents, and other PDFs
+            without uploading your documents to our server.
+          </p>
 
-            <div className="mt-10 rounded-[2rem] border border-violet-100 bg-white p-5 shadow-xl shadow-violet-100/60 sm:p-8">
-              {!result ? (
-                <>
-                  <UploadZone
-                    onFileSelected={handleFileSelected}
-                    disabled={isProcessing}
-                    error={error}
-                  />
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <ShieldCheck size={16} className="text-emerald-600" />
+              Browser-based processing
+            </span>
+            <span className="flex items-center gap-1.5">
+              <LockKeyhole size={16} className="text-emerald-600" />
+              Your files stay on your device
+            </span>
+          </div>
+        </section>
 
-                  {file && (
-                    <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-                          <FileText size={24} />
-                        </div>
+        <section className="mx-auto mt-9 max-w-3xl rounded-3xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-200/60 sm:mt-12 sm:p-8">
+          <UploadZone
+            onFileSelected={handleFileSelected}
+            disabled={isProcessing}
+            error={error}
+          />
 
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold text-slate-900">
-                            {file.name}
-                          </p>
+          {selectedFile && (
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                  <FileText size={25} />
+                </div>
 
-                          <p className="mt-1 text-sm text-slate-500">
-                            Original size: {formatFileSize(file.size)}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={handleReset}
-                          disabled={isProcessing}
-                          className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-slate-200 disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                      </div>
-
-                      {/* Compression settings */}
-                      <div className="mt-5">
-                        <label
-                          htmlFor="compression-quality"
-                          className="mb-2 block text-sm font-semibold text-slate-800"
-                        >
-                          Compression level
-                        </label>
-
-                        <select
-                          id="compression-quality"
-                          value={qualityMode}
-                          onChange={(event) =>
-                            setQualityMode(event.target.value)
-                          }
-                          disabled={isProcessing}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:opacity-60"
-                        >
-                          <option value="smaller">
-                            Smaller file — lower image quality
-                          </option>
-
-                          <option value="balanced">
-                            Balanced — recommended starting point
-                          </option>
-
-                          <option value="clearer">
-                            Clearer images — larger file
-                          </option>
-                        </select>
-
-                        <p className="mt-2 text-xs leading-5 text-slate-500">
-                          Smaller mode uses lower image quality and
-                          resolution. Results depend on the PDF content.
-                        </p>
-                      </div>
-
-                      {/* Processing progress */}
-                      {isProcessing && progress && (
-                        <div
-                          className="mt-5"
-                          role="status"
-                          aria-live="polite"
-                        >
-                          <div className="mb-2 flex items-center justify-between text-sm">
-                            <span className="font-medium text-violet-700">
-                              Processing PDF pages...
-                            </span>
-
-                            <span className="text-slate-500">
-                              {progress.current} / {progress.total}
-                            </span>
-                          </div>
-
-                          <div className="h-2 overflow-hidden rounded-full bg-violet-100">
-                            <div
-                              className="h-full rounded-full bg-violet-600 transition-all duration-200"
-                              style={{
-                                width: `${
-                                  (progress.current / progress.total) * 100
-                                }%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={handleOptimize}
-                        disabled={isProcessing}
-                        className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3.5 font-bold text-white shadow-lg shadow-violet-200 transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isProcessing ? (
-                          <>
-                            <RefreshCw
-                              size={19}
-                              className="animate-spin"
-                            />
-                            Compressing PDF...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles size={19} />
-                            Compress PDF
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  )}
-
-                  <p className="mt-5 text-center text-xs leading-5 text-slate-400">
-                    Files are processed in your browser. Large PDFs
-                    may require additional memory.
+                <div className="min-w-0 flex-1">
+                  <p className="break-words font-semibold text-slate-900">
+                    {selectedFile.name}
                   </p>
-                </>
-              ) : (
-                /* Compression results */
-                <div className="py-4">
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
-                    <CheckCircle2 size={34} />
-                  </div>
-
-                  <h2 className="mt-5 text-center text-2xl font-bold text-slate-900">
-                    PDF compression complete
-                  </h2>
-
-                  <p className="mt-2 text-center text-sm text-slate-500">
-                    Here is the actual size comparison for your file.
+                  <p className="mt-1 text-sm text-slate-500">
+                    Original size: {formatFileSize(selectedFile.size)}
                   </p>
-
-                  <div className="mt-7 grid gap-4 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 p-5">
-                      <p className="text-sm text-slate-500">
-                        Original size
-                      </p>
-
-                      <p className="mt-2 break-words text-2xl font-bold text-slate-900">
-                        {formatKB(result.originalSize)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5">
-                      <p className="text-sm text-violet-700">
-                        Compressed size
-                      </p>
-
-                      <p className="mt-2 break-words text-2xl font-bold text-slate-900">
-                        {formatKB(result.compressedSize)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 rounded-2xl bg-slate-50 p-5 text-center">
-                    {savedBytes > 0 ? (
-                      <>
-                        <p className="text-3xl font-extrabold text-emerald-700">
-                          {savedPercentage.toFixed(2)}%
-                        </p>
-
-                        <p className="mt-1 text-sm text-slate-600">
-                          Space saved: {formatKB(savedBytes)}
-                        </p>
-                      </>
-                    ) : savedBytes === 0 ? (
-                      <>
-                        <p className="font-bold text-slate-800">
-                          No size reduction
-                        </p>
-
-                        <p className="mt-1 text-sm text-slate-600">
-                          The output file is the same size as the original.
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-bold text-amber-700">
-                          The file became larger
-                        </p>
-
-                        <p className="mt-1 text-sm text-slate-600">
-                          The output is {formatKB(Math.abs(savedBytes))}{' '}
-                          larger than the original. You may prefer
-                          to keep your original PDF.
-                        </p>
-                      </>
-                    )}
-                  </div>
-
-                  {result.compressedSize > result.originalSize && (
-                    <p className="mt-3 text-center text-sm text-amber-700">
-                      Tip: Try the Smaller file preset and compare again.
-                    </p>
-                  )}
-
-                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={handleDownload}
-                      className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3.5 font-bold text-white transition hover:bg-violet-700"
-                    >
-                      <ArrowDownToLine size={19} />
-                      Download compressed PDF
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleReset}
-                      className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-5 py-3.5 font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                      <RotateCcw size={18} />
-                      Compress another
-                    </button>
-                  </div>
-
-                  <p className="mt-4 text-center text-xs leading-5 text-slate-400">
-                    This version converts pages to images. Text selection,
-                    searchable text, links, forms, and some other PDF
-                    features will not be preserved.
+                  <p className="mt-1 text-xs text-slate-500">
+                    Processing takes place in your browser. Large PDFs
+                    may take longer on mobile devices.
                   </p>
                 </div>
-              )}
+
+                {!isProcessing && (
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    aria-label="Remove selected PDF"
+                    className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
+                  >
+                    <XCircle size={20} />
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-6">
+                <h2 className="font-bold text-slate-900">
+                  Compression level
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Smaller files may have lower image quality.
+                </p>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {[
+                    {
+                      value: 'smaller',
+                      title: 'Smaller file',
+                      description: 'Prioritize file size',
+                    },
+                    {
+                      value: 'balanced',
+                      title: 'Balanced',
+                      description: 'Balance size and quality',
+                    },
+                    {
+                      value: 'clearer',
+                      title: 'Clearer pages',
+                      description: 'Prioritize image quality',
+                    },
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      disabled={isProcessing}
+                      onClick={() => setQualityMode(option.value)}
+                      aria-pressed={qualityMode === option.value}
+                      className={`rounded-xl border p-3 text-left transition ${
+                        qualityMode === option.value
+                          ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-100'
+                          : 'border-slate-200 bg-white hover:border-violet-300'
+                      } disabled:cursor-not-allowed disabled:opacity-60`}
+                    >
+                      <span className="block font-semibold text-slate-900">
+                        {option.title}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-slate-500">
+                        {option.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={handleCompress}
+                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-4 font-bold text-white shadow-lg shadow-violet-200 transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isProcessing ? (
+                  <>
+                    <RefreshCw size={19} className="animate-spin" />
+                    Processing PDF...
+                  </>
+                ) : (
+                  <>
+                    <Gauge size={20} />
+                    Compress PDF
+                  </>
+                )}
+              </button>
             </div>
+          )}
 
-            {/* Features */}
-            <div className="mt-8 grid gap-4 sm:grid-cols-3">
-              <Feature
-                icon={<LockKeyhole size={21} />}
-                title="Browser-based processing"
-                description="The PDF is processed locally instead of being uploaded to your app server."
-              />
+          {isProcessing && (
+            <div
+              className="mt-5 rounded-2xl border border-violet-100 bg-violet-50 p-4"
+              aria-live="polite"
+            >
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="font-semibold text-violet-900">
+                  Processing your PDF
+                </span>
+                <span className="shrink-0 font-medium text-violet-700">
+                  {progress
+                    ? `${progress.current} / ${progress.total} pages`
+                    : 'Preparing...'}
+                </span>
+              </div>
 
-              <Feature
-                icon={<Gauge size={21} />}
-                title="Choose your quality"
-                description="Select smaller output, balanced quality, or clearer images."
-              />
+              <div
+                className="mt-3 h-2.5 overflow-hidden rounded-full bg-violet-100"
+                role="progressbar"
+                aria-label="PDF processing progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressPercentage}
+              >
+                <div
+                  className="h-full rounded-full bg-violet-600 transition-all duration-200"
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
 
-              <Feature
-                icon={<Upload size={21} />}
-                title="Compare actual sizes"
-                description="See the output size and how many KB were saved."
-              />
+              <p className="mt-3 text-sm leading-6 text-violet-800">
+                Keep this tab open while the PDF is processing.
+                Large documents can take several minutes on a phone.
+              </p>
             </div>
+          )}
 
-            <p className="mx-auto mt-5 max-w-3xl text-center text-xs leading-5 text-slate-400">
-              Compression results depend on page count, images, fonts,
-              and the original PDF. No specific output size is guaranteed.
-            </p>
-          </div>
+          {result && (
+            <section
+              className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6"
+              aria-live="polite"
+            >
+              <div className="flex items-start gap-3">
+                {isSmaller ? (
+                  <CheckCircle2
+                    size={27}
+                    className="shrink-0 text-emerald-600"
+                  />
+                ) : (
+                  <XCircle
+                    size={27}
+                    className="shrink-0 text-amber-600"
+                  />
+                )}
+
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {isSmaller
+                      ? 'Compression complete!'
+                      : 'No file size reduction'}
+                  </h2>
+
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    {isSmaller
+                      ? `Your file is ${result.savedPercentage.toFixed(2)}% smaller.`
+                      : 'The generated PDF is not smaller than the original. Your original file may already be optimized.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-xl bg-slate-50 p-4">
+                  <p className="text-xs font-medium text-slate-500">
+                    Original size
+                  </p>
+                  <p className="mt-1 break-words text-lg font-bold text-slate-900">
+                    {formatFileSize(result.originalSize)}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-slate-50 p-4">
+                  <p className="text-xs font-medium text-slate-500">
+                    Result size
+                  </p>
+                  <p className="mt-1 break-words text-lg font-bold text-slate-900">
+                    {formatFileSize(result.compressedSize)}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-slate-50 p-4">
+                  <p className="text-xs font-medium text-slate-500">
+                    {isSmaller ? 'Space saved' : 'Size difference'}
+                  </p>
+                  <p
+                    className={`mt-1 break-words text-lg font-bold ${
+                      isSmaller ? 'text-emerald-700' : 'text-amber-700'
+                    }`}
+                  >
+                    {isSmaller
+                      ? formatFileSize(savedBytes)
+                      : `+${formatFileSize(Math.abs(savedBytes))}`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3.5 font-semibold text-white transition hover:bg-violet-700"
+                >
+                  <ArrowDownToLine size={19} />
+                  Download PDF
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-5 py-3.5 font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  <RefreshCw size={18} />
+                  Compress another
+                </button>
+              </div>
+
+              <p className="mt-4 text-xs leading-5 text-slate-500">
+                This version converts PDF pages into images. Text
+                selection, hyperlinks, forms, and other interactive
+                elements may not be preserved. Check the downloaded
+                file before relying on it.
+              </p>
+            </section>
+          )}
         </section>
 
-        {/* How it works */}
         <section
           id="how-it-works"
-          className="border-y border-violet-100 bg-white px-5 py-16 sm:py-20"
+          className="mx-auto mt-14 max-w-4xl"
         >
-          <div className="mx-auto max-w-5xl">
-            <h2 className="text-center text-3xl font-extrabold tracking-tight text-slate-950">
-              How to compress a PDF online
+          <div className="text-center">
+            <h2 className="text-2xl font-extrabold text-slate-950 sm:text-3xl">
+              How to compress a PDF
             </h2>
-
-            <p className="mx-auto mt-3 max-w-2xl text-center leading-7 text-slate-600">
-              Reduce PDF size in three steps without uploading the
-              document to your application server.
+            <p className="mt-3 text-slate-600">
+              Three simple steps to optimize your document.
             </p>
+          </div>
 
-            <div className="mt-10 grid gap-6 sm:grid-cols-3">
-              <Step
-                number="01"
-                title="Upload a PDF"
-                description="Choose a PDF document from your device."
-              />
+          <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {[
+              {
+                number: '01',
+                title: 'Choose a PDF',
+                description:
+                  'Select your PDF from your phone, tablet, or computer.',
+              },
+              {
+                number: '02',
+                title: 'Choose quality',
+                description:
+                  'Select smaller file, balanced, or clearer pages.',
+              },
+              {
+                number: '03',
+                title: 'Download',
+                description:
+                  'Compare the file sizes and download your result.',
+              },
+            ].map((step) => (
+              <article
+                key={step.number}
+                className="rounded-2xl border border-slate-200 bg-white p-5"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 font-bold text-violet-700">
+                  {step.number}
+                </span>
 
-              <Step
-                number="02"
-                title="Choose compression"
-                description="Select a quality preset and process your PDF."
-              />
+                <h3 className="mt-4 font-bold text-slate-900">
+                  {step.title}
+                </h3>
 
-              <Step
-                number="03"
-                title="Download your result"
-                description="Compare the actual file sizes before downloading."
-              />
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  {step.description}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="mx-auto mt-12 max-w-4xl rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5 sm:p-6">
+          <div className="flex items-start gap-3">
+            <ShieldCheck
+              size={24}
+              className="shrink-0 text-emerald-700"
+            />
+
+            <div>
+              <h2 className="font-bold text-slate-900">
+                Your privacy matters
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                PDFLite processes document pages locally in your
+                browser. Your PDF contents and filenames are not
+                intentionally sent to our analytics service.
+              </p>
             </div>
           </div>
         </section>
 
-        {/* FAQ */}
-        <section className="px-5 py-16 sm:py-20">
-          <div className="mx-auto max-w-3xl">
-            <h2 className="text-center text-3xl font-extrabold tracking-tight text-slate-950">
-              Frequently asked questions
-            </h2>
+        <section className="mx-auto mt-12 max-w-4xl">
+          <h2 className="text-2xl font-extrabold text-slate-950">
+            Frequently asked questions
+          </h2>
 
-            <div className="mt-8 space-y-4">
-              <FAQ
-                question="Can a 5 MB PDF become 800 KB?"
-                answer="It is possible for some PDFs, especially image-heavy documents, but it depends on the original content, page count, image quality, and resolution. This tool cannot guarantee a specific output size."
-              />
+          <div className="mt-5 space-y-4">
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                Can I compress a 300-page PDF?
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                PDFLite no longer applies a fixed 100-page limit.
+                Longer documents can be attempted, but performance
+                depends on the PDF and your device's available memory.
+              </p>
+            </article>
 
-              <FAQ
-                question="Why does my PDF become blurry?"
-                answer="The smaller-file preset uses lower image quality and resolution. Try the balanced or clearer preset if the text, signatures, or images are difficult to read."
-              />
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                Why is my compressed PDF larger?
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Some PDFs already contain optimized images and text.
+                Converting pages into images can increase file size,
+                so PDFLite compares the actual result with the original.
+              </p>
+            </article>
 
-              <FAQ
-                question="Can I search or select text in the compressed PDF?"
-                answer="Not in this version. Each page is converted into an image, so text is no longer selectable or searchable. Links, forms, and other interactive elements are also not preserved."
-              />
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                Does PDFLite upload my PDF?
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                PDF processing runs in your browser. Analytics, if
+                enabled with consent, measures general usage events
+                rather than intentionally transmitting your document
+                or its filename.
+              </p>
+            </article>
 
-              <FAQ
-                question="Are my PDF files uploaded to a server?"
-                answer="The PDF processing code runs in your browser. This application does not intentionally upload the selected document to its application server. Optional website analytics should not receive PDF contents or filenames."
-              />
-
-              <FAQ
-                question="Which compression preset should I use?"
-                answer="Try Smaller file when the output size matters most, Balanced for a compromise, and Clearer images when readability matters more. Always check the output before using or submitting it."
-              />
-            </div>
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                Will the text remain selectable?
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Not with the current image-based compression method.
+                It is best suited to documents where reducing page
+                image size matters more than preserving text selection.
+              </p>
+            </article>
           </div>
         </section>
       </main>
 
-      <footer className="border-t border-violet-100 bg-white px-5 py-7">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
-          <p className="text-sm font-semibold text-slate-700">
-            © {new Date().getFullYear()} PDFLite
+      <footer className="mt-14 border-t border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-5 py-7 text-center text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:text-left">
+          <p>
+            © {new Date().getFullYear()} PDFLite. Free online PDF tools.
           </p>
-
-          <p className="text-xs text-slate-500">
-            A browser-based PDF compression tool.
-          </p>
+          <p>Simple. Private. Online.</p>
         </div>
       </footer>
 
       <AnalyticsConsent />
     </div>
-  )
-}
-
-function Feature({ icon, title, description }) {
-  return (
-    <div className="rounded-2xl border border-violet-100 bg-white p-5">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-        {icon}
-      </div>
-
-      <h3 className="mt-4 font-bold text-slate-900">{title}</h3>
-
-      <p className="mt-2 text-sm leading-6 text-slate-600">
-        {description}
-      </p>
-    </div>
-  )
-}
-
-function Step({ number, title, description }) {
-  return (
-    <div className="rounded-2xl border border-violet-100 bg-[#faf9ff] p-6">
-      <p className="text-sm font-extrabold tracking-widest text-violet-600">
-        {number}
-      </p>
-
-      <h3 className="mt-3 text-lg font-bold text-slate-900">{title}</h3>
-
-      <p className="mt-2 text-sm leading-6 text-slate-600">
-        {description}
-      </p>
-    </div>
-  )
-}
-
-function FAQ({ question, answer }) {
-  return (
-    <details className="group rounded-2xl border border-slate-200 bg-white p-5">
-      <summary className="cursor-pointer list-none font-semibold text-slate-900">
-        <span className="flex items-center justify-between gap-4">
-          {question}
-
-          <span className="text-xl text-violet-600 transition group-open:rotate-45">
-            +
-          </span>
-        </span>
-      </summary>
-
-      <p className="mt-3 text-sm leading-7 text-slate-600">
-        {answer}
-      </p>
-    </details>
   )
 }
