@@ -216,12 +216,14 @@ export default function App() {
             Free online PDF compressor
           </div>
 
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
-            Compress PDF files
-            <span className="block text-violet-600">
-              quickly and privately
-            </span>
-          </h1>
+          
+<h1 className="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
+  Free Online PDF Compressor
+  <span className="block text-violet-600">
+    Compress PDF Files Quickly and Privately
+  </span>
+</h1>
+
 
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
             Reduce PDF file size directly in your browser. Optimize
