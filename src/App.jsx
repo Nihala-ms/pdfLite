@@ -646,16 +646,20 @@ trackEvent('download_clicked', {
               </p>
             </article>
 
-            <article className="rounded-xl border border-slate-200 bg-white p-5">
-              <h3 className="font-bold text-slate-900">
-                Will the text remain selectable?
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Not with the current image-based compression method.
-                It is best suited to documents where reducing page
-                image size matters more than preserving text selection.
-              </p>
-            </article>
+            
+<article className="rounded-xl border border-slate-200 bg-white p-5">
+  <h3 className="font-bold text-slate-900">
+    Will the text remain selectable?
+  </h3>
+  <p className="mt-2 text-sm leading-6 text-slate-600">
+    No. PDFLite uses an image-based compression method, so the
+    text in the compressed PDF may not remain selectable or
+    searchable. Hyperlinks, forms, and other interactive
+    elements may not work as expected. Keep your original PDF
+    and check the compressed file before using or sharing it.
+  </p>
+</article>
+
 
             
 <article className="rounded-xl border border-slate-200 bg-white p-5">
@@ -669,6 +673,22 @@ trackEvent('download_clicked', {
     the result before using it.
   </p>
 </article>
+
+
+<article className="rounded-xl border border-slate-200 bg-white p-5">
+  <h3 className="font-bold text-slate-900">
+    How much can I reduce my PDF file size?
+  </h3>
+  <p className="mt-2 text-sm leading-6 text-slate-600">
+    The amount of PDF file size reduction depends on the
+    original document, its images, and the compression
+    settings you choose. Some files may become much smaller,
+    while already optimized PDFs may show little reduction
+    or even increase in size. Compare the original and
+    compressed file sizes before downloading.
+  </p>
+</article>
+
 
           </div>
         </section>
