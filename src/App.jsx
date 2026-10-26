@@ -237,11 +237,14 @@ trackEvent('download_clicked', {
             </span>
           </h1>
 
-          <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
-            Reduce PDF file size directly in your browser. Optimize
-            storybooks, ebooks, scanned documents, and other PDFs
-            without uploading your documents to our server.
-          </p>
+          
+<p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
+  Compress PDF files online for free with PDFLite. Reduce PDF
+  file size directly in your browser using simple compression
+  settings. Optimize ebooks, scanned documents, and other PDFs
+  without uploading your documents to our server.
+</p>
+
 
           <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-slate-500">
             <span className="flex items-center gap-1.5">
@@ -534,8 +537,8 @@ trackEvent('download_clicked', {
         >
           <div className="text-center">
             <h2 className="text-2xl font-extrabold text-slate-950 sm:text-3xl">
-              How to compress a PDF
-            </h2>
+  How to Compress PDF Files Online
+</h2>
             <p className="mt-3 text-slate-600">
               Three simple steps to optimize your document.
             </p>
@@ -653,6 +656,20 @@ trackEvent('download_clicked', {
                 image size matters more than preserving text selection.
               </p>
             </article>
+
+            
+<article className="rounded-xl border border-slate-200 bg-white p-5">
+  <h3 className="font-bold text-slate-900">
+    Can I compress a PDF without losing quality?
+  </h3>
+  <p className="mt-2 text-sm leading-6 text-slate-600">
+    PDFLite offers smaller, balanced, and clearer compression
+    settings. Smaller files may have lower image quality.
+    Choose the setting that best suits your document and check
+    the result before using it.
+  </p>
+</article>
+
           </div>
         </section>
       </main>
