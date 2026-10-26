@@ -172,13 +172,24 @@ export default function App() {
   function handleDownload() {
     if (!result?.url) return
 
-    const link = document.createElement('a')
-    link.href = result.url
-    link.download = result.fileName
+    const isLinkedInBrowser = /LinkedInApp/i.test(
+      navigator.userAgent
+    )
 
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+    if (isLinkedInBrowser) {
+      // Try opening the generated PDF in a new tab.
+      // The fallback link below remains available if this fails.
+      window.open(result.url, '_blank')
+    } else {
+      const link = document.createElement('a')
+      link.href = result.url
+      link.download = result.fileName
+      link.style.display = 'none'
+
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    }
 
     trackEvent('download_completed', {
       result_category: getResultCategory(result),
@@ -216,14 +227,12 @@ export default function App() {
             Free online PDF compressor
           </div>
 
-          
-<h1 className="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
-  Free Online PDF Compressor
-  <span className="block text-violet-600">
-    Compress PDF Files Quickly and Privately
-  </span>
-</h1>
-
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">
+            Free Online PDF Compressor
+            <span className="block text-violet-600">
+              Compress PDF Files Quickly and Privately
+            </span>
+          </h1>
 
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
             Reduce PDF file size directly in your browser. Optimize
@@ -475,6 +484,23 @@ export default function App() {
                   <RefreshCw size={18} />
                   Compress another
                 </button>
+              </div>
+
+              <div className="mt-4 rounded-xl bg-violet-50 p-4 text-center">
+                <p className="text-sm leading-6 text-slate-700">
+                  If the download button does not work in your mobile
+                  browser, try opening the PDF directly.
+                </p>
+
+                <a
+                  href={result.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  type="application/pdf"
+                  className="mt-2 inline-block font-semibold text-violet-700 underline underline-offset-4 hover:text-violet-900"
+                >
+                  Download not working? Open PDF here
+                </a>
               </div>
 
               <p className="mt-4 text-xs leading-5 text-slate-500">
