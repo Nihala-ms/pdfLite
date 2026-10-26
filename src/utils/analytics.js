@@ -7,7 +7,7 @@ export function trackEvent(eventName, parameters = {}) {
   const allowedEvents = new Set([
     'tool_started',
     'optimization_completed',
-    'download_completed',
+    'download_clicked',
     'optimization_error',
   ])
 

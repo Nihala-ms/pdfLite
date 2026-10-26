@@ -191,9 +191,12 @@ export default function App() {
       link.remove()
     }
 
-    trackEvent('download_completed', {
-      result_category: getResultCategory(result),
-    })
+trackEvent('download_clicked', {
+  result_category: getResultCategory(result),
+  browser_context: isLinkedInBrowser
+    ? 'linkedin_in_app'
+    : 'standard_browser',
+})
   }
 
   function handleReset() {
