@@ -15,8 +15,9 @@ function loadGoogleAnalytics(measurementId) {
   }
 
   window.gtag('js', new Date())
-  window.gtag('config', measurementId)
-
+window.gtag('config', measurementId, {
+  debug_mode: true,
+})
   const script = document.createElement('script')
   script.async = true
   script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`
