@@ -486,22 +486,34 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="mt-4 rounded-xl bg-violet-50 p-4 text-center">
-                <p className="text-sm leading-6 text-slate-700">
-                  If the download button does not work in your mobile
-                  browser, try opening the PDF directly.
-                </p>
 
-                <a
-                  href={result.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  type="application/pdf"
-                  className="mt-2 inline-block font-semibold text-violet-700 underline underline-offset-4 hover:text-violet-900"
-                >
-                  Download not working? Open PDF here
-                </a>
-              </div>
+<div className="mt-4 rounded-xl bg-violet-50 p-4 text-center">
+  <p className="text-sm leading-6 text-slate-700">
+    Having trouble downloading in LinkedIn?
+    Open PDFLite in Chrome for the best experience.
+  </p>
+
+  <button
+    type="button"
+    onClick={() => {
+      const currentUrl = window.location.href
+      const isAndroid = /Android/i.test(navigator.userAgent)
+
+      if (isAndroid) {
+        const url = new URL(currentUrl)
+        const chromeUrl =
+          `googlechrome://${url.host}${url.pathname}${url.search}${url.hash}`
+
+        window.location.href = chromeUrl
+      } else {
+        window.open(currentUrl, '_blank')
+      }
+    }}
+    className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white hover:bg-violet-700"
+  >
+    Open PDFLite in Chrome
+  </button>
+</div>
 
               <p className="mt-4 text-xs leading-5 text-slate-500">
                 This version converts PDF pages into images. Text
