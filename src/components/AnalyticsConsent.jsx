@@ -15,14 +15,18 @@ function loadGoogleAnalytics(measurementId) {
   }
 
   window.gtag('js', new Date())
-window.gtag('config', measurementId, {
-  debug_mode: true,
-})
+  window.gtag('config', measurementId)
+
   const script = document.createElement('script')
   script.async = true
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(
+    measurementId
+  )}`
+
   script.onerror = () => {
     window.__pdfliteGaLoaded = false
+    script.remove()
+    console.error('Google Analytics could not be loaded.')
   }
 
   document.head.appendChild(script)
@@ -42,7 +46,14 @@ export default function AnalyticsConsent() {
 
     if (choice === 'accepted') {
       const measurementId = import.meta.env.VITE_GA_MEASUREMENT_ID
-      loadGoogleAnalytics(measurementId)
+
+      if (measurementId) {
+        loadGoogleAnalytics(measurementId)
+      } else {
+        console.warn(
+          'Google Analytics Measurement ID is missing. Check your VITE_GA_MEASUREMENT_ID environment variable.'
+        )
+      }
     }
   }, [choice])
 
@@ -75,8 +86,10 @@ export default function AnalyticsConsent() {
 
           <p className="mt-1 text-sm leading-6 text-slate-600">
             With your permission, we use Google Analytics to understand
-            visits and general tool usage. We do not intentionally send
-            your PDF contents or file names to Analytics.
+            website visits and general tool usage. We do not
+            intentionally send your PDF contents or filenames to
+            Google Analytics. You can reject optional analytics and
+            still use PDFLite.
           </p>
 
           <div className="mt-4 flex flex-wrap gap-2">

@@ -5,14 +5,20 @@ export default function Header() {
   return (
     <header className="border-b border-violet-100 bg-white/90">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
-        <a href="/" className="flex items-center gap-3" aria-label="PDFLite home">
+        <a
+          href="/"
+          className="flex items-center gap-3"
+          aria-label="PDFLite home"
+        >
           <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-lg shadow-violet-200">
             <FileText size={23} />
           </span>
+
           <span>
             <span className="block text-xl font-extrabold tracking-tight text-slate-900">
               PDF<span className="text-violet-600">Lite</span>
             </span>
+
             <span className="block text-xs text-slate-500">
               Simple. Private. Online.
             </span>

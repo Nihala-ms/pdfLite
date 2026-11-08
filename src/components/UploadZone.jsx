@@ -12,10 +12,15 @@ export default function UploadZone({
 
   function handleFiles(files) {
     const file = files?.[0]
-    if (file) onFileSelected(file)
+
+    if (file) {
+      onFileSelected(file)
+    }
 
     // Allow selecting the same file again.
-    if (inputRef.current) inputRef.current.value = ''
+    if (inputRef.current) {
+      inputRef.current.value = ''
+    }
   }
 
   function handleDrop(event) {
@@ -30,11 +35,25 @@ export default function UploadZone({
   return (
     <div>
       <div
+        onDragEnter={(event) => {
+          event.preventDefault()
+
+          if (!disabled) {
+            setIsDragging(true)
+          }
+        }}
         onDragOver={(event) => {
           event.preventDefault()
-          if (!disabled) setIsDragging(true)
+
+          if (!disabled) {
+            setIsDragging(true)
+          }
         }}
-        onDragLeave={() => setIsDragging(false)}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            setIsDragging(false)
+          }
+        }}
         onDrop={handleDrop}
         className={`rounded-3xl border-2 border-dashed p-8 text-center transition sm:p-12 ${
           isDragging
