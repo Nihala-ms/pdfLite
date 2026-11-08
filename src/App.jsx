@@ -65,7 +65,6 @@ export default function App() {
   const [progress, setProgress] = useState(null)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
-  const [dragHint, setDragHint] = useState(false)
 
   const downloadUrlRef = useRef(null)
 
@@ -177,8 +176,8 @@ export default function App() {
     )
 
     if (isLinkedInBrowser) {
-      // Try opening the generated PDF in a new tab.
-      // The fallback link below remains available if this fails.
+      // LinkedIn's in-app browser may not handle blob downloads normally.
+      // Open the generated PDF in a new tab as a fallback.
       window.open(result.url, '_blank')
     } else {
       const link = document.createElement('a')
@@ -191,19 +190,17 @@ export default function App() {
       link.remove()
     }
 
-trackEvent('download_clicked', {
-  result_category: getResultCategory(result),
-  browser_context: isLinkedInBrowser
-    ? 'linkedin_in_app'
-    : 'standard_browser',
-})
+    trackEvent('download_clicked', {
+      result_category: getResultCategory(result),
+      browser_context: isLinkedInBrowser
+        ? 'linkedin_in_app'
+        : 'standard_browser',
+    })
   }
 
   function handleReset() {
     clearPreviousResult()
     setSelectedFile(null)
-    setIsProcessing(false)
-    setDragHint(false)
   }
 
   const savedBytes = result
@@ -237,20 +234,20 @@ trackEvent('download_clicked', {
             </span>
           </h1>
 
-          
-<p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
-  Compress PDF files online for free with PDFLite. Reduce PDF
-  file size directly in your browser using simple compression
-  settings. Optimize ebooks, scanned documents, and other PDFs
-  without uploading your documents to our server.
-</p>
-
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
+            Compress PDF files online for free with PDFLite. Reduce
+            PDF file size directly in your browser using simple
+            compression settings. Optimize ebooks, scanned documents,
+            and other PDF files without uploading your documents to
+            our server.
+          </p>
 
           <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-slate-500">
             <span className="flex items-center gap-1.5">
               <ShieldCheck size={16} className="text-emerald-600" />
               Browser-based processing
             </span>
+
             <span className="flex items-center gap-1.5">
               <LockKeyhole size={16} className="text-emerald-600" />
               Your files stay on your device
@@ -276,12 +273,15 @@ trackEvent('download_clicked', {
                   <p className="break-words font-semibold text-slate-900">
                     {selectedFile.name}
                   </p>
+
                   <p className="mt-1 text-sm text-slate-500">
                     Original size: {formatFileSize(selectedFile.size)}
                   </p>
+
                   <p className="mt-1 text-xs text-slate-500">
                     Processing takes place in your browser. Large PDFs
-                    may take longer on mobile devices.
+                    may take longer to process, especially on mobile
+                    devices.
                   </p>
                 </div>
 
@@ -301,8 +301,10 @@ trackEvent('download_clicked', {
                 <h2 className="font-bold text-slate-900">
                   Compression level
                 </h2>
+
                 <p className="mt-1 text-sm text-slate-500">
-                  Smaller files may have lower image quality.
+                  Choose how much to prioritize file size or image
+                  quality.
                 </p>
 
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -338,6 +340,7 @@ trackEvent('download_clicked', {
                       <span className="block font-semibold text-slate-900">
                         {option.title}
                       </span>
+
                       <span className="mt-1 block text-xs leading-5 text-slate-500">
                         {option.description}
                       </span>
@@ -376,6 +379,7 @@ trackEvent('download_clicked', {
                 <span className="font-semibold text-violet-900">
                   Processing your PDF
                 </span>
+
                 <span className="shrink-0 font-medium text-violet-700">
                   {progress
                     ? `${progress.current} / ${progress.total} pages`
@@ -398,7 +402,7 @@ trackEvent('download_clicked', {
               </div>
 
               <p className="mt-3 text-sm leading-6 text-violet-800">
-                Keep this tab open while the PDF is processing.
+                Keep this tab open while your PDF is processing.
                 Large documents can take several minutes on a phone.
               </p>
             </div>
@@ -442,6 +446,7 @@ trackEvent('download_clicked', {
                   <p className="text-xs font-medium text-slate-500">
                     Original size
                   </p>
+
                   <p className="mt-1 break-words text-lg font-bold text-slate-900">
                     {formatFileSize(result.originalSize)}
                   </p>
@@ -451,6 +456,7 @@ trackEvent('download_clicked', {
                   <p className="text-xs font-medium text-slate-500">
                     Result size
                   </p>
+
                   <p className="mt-1 break-words text-lg font-bold text-slate-900">
                     {formatFileSize(result.compressedSize)}
                   </p>
@@ -460,6 +466,7 @@ trackEvent('download_clicked', {
                   <p className="text-xs font-medium text-slate-500">
                     {isSmaller ? 'Space saved' : 'Size difference'}
                   </p>
+
                   <p
                     className={`mt-1 break-words text-lg font-bold ${
                       isSmaller ? 'text-emerald-700' : 'text-amber-700'
@@ -492,40 +499,41 @@ trackEvent('download_clicked', {
                 </button>
               </div>
 
+              <div className="mt-4 rounded-xl bg-violet-50 p-4 text-center">
+                <p className="text-sm leading-6 text-slate-700">
+                  Having trouble downloading in LinkedIn? Open PDFLite
+                  in Chrome or another browser for the best experience.
+                </p>
 
-<div className="mt-4 rounded-xl bg-violet-50 p-4 text-center">
-  <p className="text-sm leading-6 text-slate-700">
-    Having trouble downloading in LinkedIn?
-    Open PDFLite in Chrome for the best experience.
-  </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentUrl = window.location.href
+                    const isAndroid = /Android/i.test(
+                      navigator.userAgent
+                    )
 
-  <button
-    type="button"
-    onClick={() => {
-      const currentUrl = window.location.href
-      const isAndroid = /Android/i.test(navigator.userAgent)
+                    if (isAndroid) {
+                      const url = new URL(currentUrl)
+                      const chromeUrl =
+                        `googlechrome://${url.host}${url.pathname}${url.search}${url.hash}`
 
-      if (isAndroid) {
-        const url = new URL(currentUrl)
-        const chromeUrl =
-          `googlechrome://${url.host}${url.pathname}${url.search}${url.hash}`
-
-        window.location.href = chromeUrl
-      } else {
-        window.open(currentUrl, '_blank')
-      }
-    }}
-    className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white hover:bg-violet-700"
-  >
-    Open PDFLite in Chrome
-  </button>
-</div>
+                      window.location.href = chromeUrl
+                    } else {
+                      window.open(currentUrl, '_blank')
+                    }
+                  }}
+                  className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 font-semibold text-white hover:bg-violet-700"
+                >
+                  Open PDFLite in browser
+                </button>
+              </div>
 
               <p className="mt-4 text-xs leading-5 text-slate-500">
-                This version converts PDF pages into images. Text
-                selection, hyperlinks, forms, and other interactive
-                elements may not be preserved. Check the downloaded
-                file before relying on it.
+                PDFLite converts PDF pages into images during
+                compression. Text selection, hyperlinks, forms, and
+                other interactive elements may not be preserved.
+                Always check the downloaded file before relying on it.
               </p>
             </section>
           )}
@@ -537,10 +545,11 @@ trackEvent('download_clicked', {
         >
           <div className="text-center">
             <h2 className="text-2xl font-extrabold text-slate-950 sm:text-3xl">
-  How to Compress PDF Files Online
-</h2>
+              How to Compress PDF Files Online
+            </h2>
+
             <p className="mt-3 text-slate-600">
-              Three simple steps to optimize your document.
+              Reduce PDF file size in three simple steps.
             </p>
           </div>
 
@@ -550,19 +559,19 @@ trackEvent('download_clicked', {
                 number: '01',
                 title: 'Choose a PDF',
                 description:
-                  'Select your PDF from your phone, tablet, or computer.',
+                  'Select a PDF file from your phone, tablet, or computer. Files up to 100 MB are supported.',
               },
               {
                 number: '02',
                 title: 'Choose quality',
                 description:
-                  'Select smaller file, balanced, or clearer pages.',
+                  'Select smaller file, balanced, or clearer pages based on your needs.',
               },
               {
                 number: '03',
                 title: 'Download',
                 description:
-                  'Compare the file sizes and download your result.',
+                  'Compare the original and compressed file sizes, then download your PDF.',
               },
             ].map((step) => (
               <article
@@ -585,6 +594,53 @@ trackEvent('download_clicked', {
           </div>
         </section>
 
+        <section className="mx-auto mt-12 max-w-4xl rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+          <h2 className="text-xl font-extrabold text-slate-950">
+            Choose the Right PDF Compression Setting
+          </h2>
+
+          <p className="mt-3 text-sm leading-7 text-slate-600">
+            PDFLite provides three compression options to help you
+            balance PDF file size and page image quality. Choose
+            Smaller file when reducing file size is your priority.
+            Choose Balanced for a middle ground, or Clearer pages
+            when you want to prioritize image quality. The final
+            result depends on the original PDF and its contents.
+          </p>
+
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded-xl bg-slate-50 p-4">
+              <h3 className="font-bold text-slate-900">
+                Smaller file
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Uses stronger image compression to prioritize a
+                smaller output file.
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-4">
+              <h3 className="font-bold text-slate-900">
+                Balanced
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Balances image quality and file size for general
+                document use.
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-4">
+              <h3 className="font-bold text-slate-900">
+                Clearer pages
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Prioritizes clearer page images, which may result
+                in a larger PDF.
+              </p>
+            </div>
+          </div>
+        </section>
+
         <section className="mx-auto mt-12 max-w-4xl rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5 sm:p-6">
           <div className="flex items-start gap-3">
             <ShieldCheck
@@ -600,7 +656,9 @@ trackEvent('download_clicked', {
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 PDFLite processes document pages locally in your
                 browser. Your PDF contents and filenames are not
-                intentionally sent to our analytics service.
+                intentionally sent to our analytics service. If you
+                consent to analytics, general usage events may be
+                measured to help us understand how the tool is used.
               </p>
             </div>
           </div>
@@ -608,29 +666,47 @@ trackEvent('download_clicked', {
 
         <section className="mx-auto mt-12 max-w-4xl">
           <h2 className="text-2xl font-extrabold text-slate-950">
-            Frequently asked questions
+            Frequently Asked Questions About PDF Compression
           </h2>
 
           <div className="mt-5 space-y-4">
             <article className="rounded-xl border border-slate-200 bg-white p-5">
               <h3 className="font-bold text-slate-900">
-                Can I compress a 300-page PDF?
+                Is PDFLite free to use?
               </h3>
+
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                PDFLite no longer applies a fixed 100-page limit.
-                Longer documents can be attempted, but performance
-                depends on the PDF and your device's available memory.
+                Yes. PDFLite is a free online PDF compressor. You can
+                select a PDF, choose a compression setting, and
+                download the processed file without creating an
+                account.
               </p>
             </article>
 
             <article className="rounded-xl border border-slate-200 bg-white p-5">
               <h3 className="font-bold text-slate-900">
-                Why is my compressed PDF larger?
+                What is the maximum PDF file size supported?
               </h3>
+
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Some PDFs already contain optimized images and text.
-                Converting pages into images can increase file size,
-                so PDFLite compares the actual result with the original.
+                PDFLite supports PDF files up to 100 MB. Files larger
+                than 100 MB cannot be processed. Processing time and
+                success also depend on the number of pages, document
+                complexity, and the available memory on your device.
+              </p>
+            </article>
+
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                Can I compress a 300-page PDF?
+              </h3>
+
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                PDFLite does not use a fixed 100-page limit. You can
+                try processing a 300-page PDF if it is within the
+                100 MB file-size limit. However, large documents may
+                take longer or exceed your device's available memory.
+                Processing success is not guaranteed for every PDF.
               </p>
             </article>
 
@@ -638,58 +714,85 @@ trackEvent('download_clicked', {
               <h3 className="font-bold text-slate-900">
                 Does PDFLite upload my PDF?
               </h3>
+
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                PDF processing runs in your browser. Analytics, if
-                enabled with consent, measures general usage events
-                rather than intentionally transmitting your document
-                or its filename.
+                PDF processing runs locally in your browser. Your
+                document is not intentionally uploaded to our server
+                for compression. If analytics is enabled with your
+                consent, general usage events may be measured without
+                intentionally transmitting your document or filename.
               </p>
             </article>
 
-            
-<article className="rounded-xl border border-slate-200 bg-white p-5">
-  <h3 className="font-bold text-slate-900">
-    Will the text remain selectable?
-  </h3>
-  <p className="mt-2 text-sm leading-6 text-slate-600">
-    No. PDFLite uses an image-based compression method, so the
-    text in the compressed PDF may not remain selectable or
-    searchable. Hyperlinks, forms, and other interactive
-    elements may not work as expected. Keep your original PDF
-    and check the compressed file before using or sharing it.
-  </p>
-</article>
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                Will the text remain selectable?
+              </h3>
 
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                No. PDFLite uses an image-based compression method.
+                Text in the compressed PDF may not remain selectable
+                or searchable. Hyperlinks, forms, and other interactive
+                elements may not work as expected. Keep your original
+                PDF and check the compressed file before using or
+                sharing it.
+              </p>
+            </article>
 
-            
-<article className="rounded-xl border border-slate-200 bg-white p-5">
-  <h3 className="font-bold text-slate-900">
-    Can I compress a PDF without losing quality?
-  </h3>
-  <p className="mt-2 text-sm leading-6 text-slate-600">
-    PDFLite offers smaller, balanced, and clearer compression
-    settings. Smaller files may have lower image quality.
-    Choose the setting that best suits your document and check
-    the result before using it.
-  </p>
-</article>
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                Can I compress a PDF without losing quality?
+              </h3>
 
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Image-based compression can affect page quality.
+                PDFLite offers Smaller file, Balanced, and Clearer
+                pages settings so you can choose the option that
+                best suits your document. Check the output before
+                using it.
+              </p>
+            </article>
 
-<article className="rounded-xl border border-slate-200 bg-white p-5">
-  <h3 className="font-bold text-slate-900">
-    How much can I reduce my PDF file size?
-  </h3>
-  <p className="mt-2 text-sm leading-6 text-slate-600">
-    The amount of PDF file size reduction depends on the
-    original document, its images, and the compression
-    settings you choose. Some files may become much smaller,
-    while already optimized PDFs may show little reduction
-    or even increase in size. Compare the original and
-    compressed file sizes before downloading.
-  </p>
-</article>
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                Why is my compressed PDF larger than the original?
+              </h3>
 
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Some PDFs already contain optimized images and text.
+                Converting pages into images can increase file size.
+                PDFLite compares the generated file with the original
+                and shows you when the output is not smaller.
+              </p>
+            </article>
 
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                How much can I reduce my PDF file size?
+              </h3>
+
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                The amount of PDF file size reduction depends on the
+                original document, its images, and the compression
+                setting you choose. Some files may become much smaller,
+                while already optimized PDFs may show little reduction
+                or even increase in size. Compare the original and
+                compressed file sizes before downloading.
+              </p>
+            </article>
+
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-bold text-slate-900">
+                Can I compress a password-protected PDF?
+              </h3>
+
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Password-protected or encrypted PDFs may not be
+                supported. If PDFLite cannot open your document,
+                unlock it using a trusted PDF application first,
+                then try processing the unlocked file.
+              </p>
+            </article>
           </div>
         </section>
       </main>
@@ -699,6 +802,7 @@ trackEvent('download_clicked', {
           <p>
             © {new Date().getFullYear()} PDFLite. Free online PDF tools.
           </p>
+
           <p>Simple. Private. Online.</p>
         </div>
       </footer>

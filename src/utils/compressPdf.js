@@ -14,7 +14,9 @@ function canvasToJpeg(canvas, quality) {
         if (blob) {
           resolve(blob)
         } else {
-          reject(new Error('Could not convert a PDF page to an image.'))
+          reject(
+            new Error('Could not convert a PDF page to an image.')
+          )
         }
       },
       'image/jpeg',
@@ -26,18 +28,19 @@ function canvasToJpeg(canvas, quality) {
 function getDeviceSettings(pageCount, quality, scale) {
   const isMobile =
     typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
     window.matchMedia('(max-width: 768px)').matches
 
   let finalQuality = quality
   let finalScale = scale
 
-  // Mobile browsers usually have less available memory.
+  // Reduce memory usage on mobile devices.
   if (isMobile) {
     finalScale = Math.min(finalScale, 0.85)
     finalQuality = Math.min(finalQuality, 0.55)
   }
 
-  // Adapt quality and resolution to long documents.
+  // Adapt rendering settings for larger documents.
   if (pageCount > 50) {
     finalScale = Math.min(finalScale, 0.8)
     finalQuality = Math.min(finalQuality, 0.5)
@@ -65,8 +68,15 @@ function getSafeRenderScale(viewport, settings) {
   const width = viewport.width
   const height = viewport.height
 
-  if (!width || !height) {
-    throw new Error('This PDF contains a page with invalid dimensions.')
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    throw new Error(
+      'This PDF contains a page with invalid dimensions.'
+    )
   }
 
   const dimensionScale =
@@ -76,17 +86,22 @@ function getSafeRenderScale(viewport, settings) {
     settings.maxPixels / (width * height),
   )
 
-  return Math.min(
+  const safeScale = Math.min(
     settings.scale,
     dimensionScale,
     pixelScale,
   )
+
+  if (!Number.isFinite(safeScale) || safeScale <= 0) {
+    throw new Error(
+      'This PDF page is too large to process on your device.'
+    )
+  }
+
+  return safeScale
 }
 
-export async function compressPdf(
-  file,
-  { quality = 0.6, scale = 1.25, onProgress } = {},
-) {
+function validatePdfFile(file) {
   if (!(file instanceof File)) {
     throw new Error('Please select a PDF file.')
   }
@@ -104,16 +119,86 @@ export async function compressPdf(
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    throw new Error('The maximum supported file size is 100 MB.')
+    throw new Error(
+      'The maximum supported file size is 100 MB.'
+    )
+  }
+}
+
+function validateCompressionSettings(quality, scale) {
+  if (
+    !Number.isFinite(quality) ||
+    quality < 0.1 ||
+    quality > 1
+  ) {
+    throw new Error(
+      'Image quality must be between 0.1 and 1.'
+    )
   }
 
-  if (!Number.isFinite(quality) || quality < 0.1 || quality > 1) {
-    throw new Error('Image quality must be between 0.1 and 1.')
+  if (
+    !Number.isFinite(scale) ||
+    scale < 0.5 ||
+    scale > 2
+  ) {
+    throw new Error(
+      'Rendering scale must be between 0.5 and 2.'
+    )
+  }
+}
+
+function getCompressedFileName(fileName) {
+  const nameWithoutExtension = fileName.replace(/\.pdf$/i, '')
+
+  return `${nameWithoutExtension || 'document'}-compressed.pdf`
+}
+
+function getProcessingError(error) {
+  if (
+    error?.name === 'PasswordException' ||
+    error?.name === 'EncryptedPDFException'
+  ) {
+    return new Error(
+      'This PDF is password-protected. Please unlock it first.'
+    )
   }
 
-  if (!Number.isFinite(scale) || scale < 0.5 || scale > 2) {
-    throw new Error('Rendering scale must be between 0.5 and 2.')
+  const message =
+    typeof error?.message === 'string'
+      ? error.message
+      : ''
+
+  if (
+    /memory|allocation|out of memory/i.test(message)
+  ) {
+    return new Error(
+      'Your device ran out of memory. Close other tabs and try again, or use a smaller PDF.'
+    )
   }
+
+  if (
+    /worker|canvas|invalid dimensions|too large to process/i.test(
+      message
+    )
+  ) {
+    return error
+  }
+
+  return new Error(
+    'PDF processing failed. Please try again with another PDF. If the problem continues, the file may be unsupported or too complex for this browser.'
+  )
+}
+
+export async function compressPdf(
+  file,
+  {
+    quality = 0.6,
+    scale = 1.25,
+    onProgress,
+  } = {},
+) {
+  validatePdfFile(file)
+  validateCompressionSettings(quality, scale)
 
   let loadingTask
 
@@ -128,7 +213,9 @@ export async function compressPdf(
     const pageCount = pdf.numPages
 
     if (!pageCount) {
-      throw new Error('This PDF does not contain any pages.')
+      throw new Error(
+        'This PDF does not contain any pages.'
+      )
     }
 
     const settings = getDeviceSettings(
@@ -139,14 +226,21 @@ export async function compressPdf(
 
     const outputPdf = await PDFDocument.create()
 
-    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
+    for (
+      let pageNumber = 1;
+      pageNumber <= pageCount;
+      pageNumber++
+    ) {
       onProgress?.({
         current: pageNumber,
         total: pageCount,
       })
 
       const page = await pdf.getPage(pageNumber)
-      const originalViewport = page.getViewport({ scale: 1 })
+
+      const originalViewport = page.getViewport({
+        scale: 1,
+      })
 
       const renderScale = getSafeRenderScale(
         originalViewport,
@@ -158,13 +252,14 @@ export async function compressPdf(
       })
 
       const canvas = document.createElement('canvas')
+
       const context = canvas.getContext('2d', {
         alpha: false,
       })
 
       if (!context) {
         throw new Error(
-          'Your browser could not create a canvas. Try another browser.',
+          'Your browser could not create a canvas. Try another browser.'
         )
       }
 
@@ -185,7 +280,10 @@ export async function compressPdf(
         )
 
         const jpegBytes = await jpegBlob.arrayBuffer()
-        const embeddedImage = await outputPdf.embedJpg(jpegBytes)
+
+        const embeddedImage = await outputPdf.embedJpg(
+          jpegBytes
+        )
 
         const outputPage = outputPdf.addPage([
           originalViewport.width,
@@ -199,18 +297,13 @@ export async function compressPdf(
           height: originalViewport.height,
         })
       } finally {
-        // Release each page's canvas memory before processing
-        // the next page.
+        // Release page canvas memory after each page.
         canvas.width = 0
         canvas.height = 0
+
         page.cleanup()
       }
     }
-
-    onProgress?.({
-      current: pageCount,
-      total: pageCount,
-    })
 
     const outputBytes = await outputPdf.save({
       useObjectStreams: true,
@@ -222,6 +315,11 @@ export async function compressPdf(
 
     const savedBytes = file.size - blob.size
 
+    onProgress?.({
+      current: pageCount,
+      total: pageCount,
+    })
+
     return {
       blob,
       originalSize: file.size,
@@ -229,44 +327,12 @@ export async function compressPdf(
       savedBytes,
       savedPercentage: (savedBytes / file.size) * 100,
       isSmaller: blob.size < file.size,
-      fileName:
-        file.name.replace(/\.pdf$/i, '') + '-compressed.pdf',
+      fileName: getCompressedFileName(file.name),
     }
   } catch (error) {
     console.error('PDF compression failed:', error)
 
-    if (
-      error?.name === 'PasswordException' ||
-      error?.name === 'EncryptedPDFException'
-    ) {
-      throw new Error(
-        'This PDF is password-protected. Please unlock it first.',
-      )
-    }
-
-    if (
-      error?.message?.includes('between 0.1 and 1') ||
-      error?.message?.includes('between 0.5 and 2') ||
-      error?.message?.includes('100 MB') ||
-      error?.message?.includes('does not contain') ||
-      error?.message?.includes('invalid dimensions')
-    ) {
-      throw error
-    }
-
-    if (
-      /memory|allocation|out of memory/i.test(
-        error?.message || '',
-      )
-    ) {
-      throw new Error(
-        'Your device ran out of memory. Close other tabs and try again, or use a smaller PDF.',
-      )
-    }
-
-    throw new Error(
-      'PDF processing failed. Please try again with another PDF. If the problem continues, the file may be unsupported or too complex for this browser.',
-    )
+    throw getProcessingError(error)
   } finally {
     if (loadingTask) {
       await loadingTask.destroy().catch(() => {})
